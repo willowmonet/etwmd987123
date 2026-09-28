@@ -272,6 +272,31 @@
     font-size:13px; font-weight:600; opacity:0; transition:all 0.25s; pointer-events:none; z-index:50;
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ---------- Accounts ---------- */
+  .modal{ max-height:92vh; max-height:92dvh; overflow-y:auto; }
+  .acct-pick{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--ink-2); border-radius:12px; padding:8px 12px; margin:0 0 10px; }
+  .acct-pick label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .acct-pick select{ background:transparent; border:none; color:var(--paper); font-size:15px; font-family:inherit; text-align:right; max-width:65%; }
+  .section-row{ display:flex; align-items:center; justify-content:space-between; }
+  .link-btn{ background:none; border:none; color:var(--paper); text-decoration:underline; font-size:12px; cursor:pointer; padding:0; }
+  .acct-strip{ display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; margin-bottom:16px; scrollbar-width:none; }
+  .acct-strip::-webkit-scrollbar{ display:none; }
+  .acct-card{ flex:0 0 auto; min-width:140px; background:var(--ink-2); border:1px solid rgba(247,243,232,0.07); border-radius:14px; padding:12px; cursor:pointer; color:var(--paper); }
+  .acct-card.sel{ border-color:var(--paper); }
+  .acct-card .n{ font-size:12px; color:var(--muted); margin-bottom:4px; white-space:nowrap; }
+  .acct-card .v{ font-family:'IBM Plex Mono',monospace; font-size:17px; }
+  .acct-card .v.neg{ color:var(--red); }
+  .acct-card .s{ font-size:10.5px; color:var(--muted); margin-top:3px; white-space:nowrap; }
+  .entry-row .amt.transfer{ color:var(--muted); }
+  .acct-switch{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--ink-2); border:1px solid rgba(247,243,232,0.07); border-radius:16px; padding:10px; margin:8px 0 14px; }
+  .acct-switch button{ background:var(--ink); border:none; color:var(--paper); width:36px; height:36px; border-radius:10px; cursor:pointer; flex:0 0 auto; }
+  .acct-switch .mid{ text-align:center; min-width:0; }
+  .acct-switch .name{ font-size:15px; font-weight:700; }
+  .acct-switch .bal{ font-size:17px; margin-top:2px; }
+  .acct-switch .bal.neg{ color:var(--red); }
+  .acct-switch .sub{ font-size:11px; color:var(--muted); margin-top:1px; }
+  .hint{ font-size:11px; color:var(--muted); margin:-4px 0 12px; }
 </style>
 </head>
 <body>
@@ -307,6 +332,7 @@
       <h2>Pick a category</h2>
     </div>
     <div class="cat-grid" id="catGrid"></div>
+    <div style="text-align:center; margin-top:16px;"><button class="link-btn" id="editCats" style="display:none;">Edit custom categories</button></div>
   </div>
 
   <!-- ============ MANUAL: NUMPAD ============ -->
@@ -319,6 +345,7 @@
       <button class="active expense" data-type="expense" id="typeExpense">Expense</button>
       <button class="income" data-type="income" id="typeIncome">Income</button>
     </div>
+    <div class="acct-pick"><label for="numAccount">Account</label><select id="numAccount"></select></div>
     <div class="amount-display">
       <div class="cat-tag" id="numCatTag">Food</div>
       <div class="num mono" id="numDisplay">$0</div>
@@ -343,6 +370,16 @@
 
   <!-- ============ OVERVIEW ============ -->
   <div class="screen" id="screen-overview">
+    <div class="acct-switch">
+      <button id="prevAcct" aria-label="Previous account">‹</button>
+      <div class="mid">
+        <div class="name" id="acctSwitchName">—</div>
+        <div class="bal mono" id="acctSwitchBal"></div>
+        <div class="sub" id="acctSwitchSub"></div>
+      </div>
+      <button id="nextAcct" aria-label="Next account">›</button>
+    </div>
+    <div style="text-align:center; margin:-8px 0 14px;"><button class="link-btn" id="manageAccounts">Manage accounts</button></div>
     <div class="month-switch">
       <button id="prevMonth">‹</button>
       <h2 id="overviewMonthLabel">—</h2>
@@ -376,6 +413,7 @@
   <div class="sheet-item" data-nav="screen-home"><div class="emoji">🏠</div><div class="label">Home</div></div>
   <div class="sheet-item" data-nav="screen-overview"><div class="emoji">📊</div><div class="label">Overview</div></div>
   <div class="sheet-item" data-nav="screen-receipts"><div class="emoji">🧾</div><div class="label">Receipts</div></div>
+  <div class="sheet-item" id="openAccountsMenu"><div class="emoji">🏦</div><div class="label">Accounts</div></div>
   <div class="sheet-item" id="openSettings"><div class="emoji">⚙️</div><div class="label">Settings</div></div>
 </div>
 
@@ -394,7 +432,7 @@
    Everything stays on this device. No server, no accounts.
 ============================================================ */
 const DB_NAME = "ledger-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let db;
 
 function openDB(){
@@ -407,6 +445,7 @@ function openDB(){
       if(!d.objectStoreNames.contains("recurring")) d.createObjectStore("recurring", {keyPath:"id"});
       if(!d.objectStoreNames.contains("budgets")) d.createObjectStore("budgets", {keyPath:"category"});
       if(!d.objectStoreNames.contains("settings")) d.createObjectStore("settings", {keyPath:"key"});
+      if(!d.objectStoreNames.contains("accounts")) d.createObjectStore("accounts", {keyPath:"id"});
     };
     req.onsuccess = (e)=>{ db = e.target.result; resolve(db); };
     req.onerror = (e)=> reject(e);
@@ -445,7 +484,7 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
 /* ============================================================
    CATEGORIES
 ============================================================ */
-const CATEGORIES = [
+const BASE_CATEGORIES = [
   {id:"food", name:"Food", emoji:"🍜"},
   {id:"transport", name:"Transport", emoji:"🚗"},
   {id:"shopping", name:"Shopping", emoji:"🛍️"},
@@ -456,6 +495,22 @@ const CATEGORIES = [
   {id:"income", name:"Income", emoji:"💰"},
   {id:"other", name:"Other", emoji:"✳️"},
 ];
+// Custom categories you add in the app are stored on-device (settings store)
+let CUSTOM_CATEGORIES = [];
+let CATEGORIES = BASE_CATEGORIES.slice();
+function rebuildCategories(){
+  const other = BASE_CATEGORIES.find(c=>c.id==="other");
+  CATEGORIES = BASE_CATEGORIES.filter(c=>c.id!=="other").concat(CUSTOM_CATEGORIES, [other]);
+}
+async function loadCategories(){
+  CUSTOM_CATEGORIES = (await getSetting("customCategories")) || [];
+  rebuildCategories();
+}
+async function saveCustomCategories(){
+  await setSetting("customCategories", CUSTOM_CATEGORIES);
+  rebuildCategories();
+  renderCatGrid();
+}
 function catInfo(id){ return CATEGORIES.find(c=>c.id===id) || CATEGORIES[CATEGORIES.length-1]; }
 
 /* ============================================================
@@ -513,7 +568,7 @@ async function renderLastEntry(){
   const wrap = document.getElementById("lastEntryWrap");
   if(!entries.length){ wrap.innerHTML = ""; return; }
   const e = entries[0];
-  const c = catInfo(e.category);
+  const c = entryDisplay(e);
   wrap.innerHTML = `
     <div class="last-entry" id="lastEntryCard">
       <div>
@@ -529,13 +584,91 @@ async function renderLastEntry(){
    MANUAL LOG FLOW
 ============================================================ */
 const catGrid = document.getElementById("catGrid");
-CATEGORIES.filter(c=>c.id!=="income").forEach(c=>{
-  const tile = document.createElement("div");
-  tile.className = "cat-tile";
-  tile.innerHTML = `<div class="emoji">${c.emoji}</div><div class="name">${c.name}</div>`;
-  tile.addEventListener("click", ()=> startNumpad(c.id));
-  catGrid.appendChild(tile);
-});
+function renderCatGrid(){
+  catGrid.innerHTML = "";
+  const addTile = (emoji, name, onClick)=>{
+    const tile = document.createElement("div");
+    tile.className = "cat-tile";
+    tile.innerHTML = `<div class="emoji">${escapeHtml(emoji)}</div><div class="name">${escapeHtml(name)}</div>`;
+    tile.addEventListener("click", onClick);
+    catGrid.appendChild(tile);
+  };
+  CATEGORIES.filter(c=>c.id!=="income").forEach(c=> addTile(c.emoji, c.name, ()=> startNumpad(c.id)));
+  addTile("🔁", "Recurring", ()=> openRecurringManager());
+  addTile("＋", "New category", ()=> openCategoryForm(null));
+  document.getElementById("editCats").style.display = CUSTOM_CATEGORIES.length ? "" : "none";
+}
+document.getElementById("editCats").addEventListener("click", openCategoryManager);
+
+function firstEmoji(str){
+  str = (str || "").trim();
+  if(!str) return "🏷️";
+  if(window.Intl && Intl.Segmenter){
+    const it = new Intl.Segmenter(undefined, {granularity:"grapheme"}).segment(str)[Symbol.iterator]().next();
+    return it.value ? it.value.segment : "🏷️";
+  }
+  return Array.from(str)[0];
+}
+
+function openCategoryManager(){
+  const rows = CUSTOM_CATEGORIES.map(c=> `<div class="entry-row" data-cat-edit="${c.id}">
+      <div class="left"><div class="emoji">${escapeHtml(c.emoji)}</div><div class="meta"><div class="cat">${escapeHtml(c.name)}</div></div></div>
+      <div class="chev" style="color:var(--muted);">edit ›</div></div>`).join("");
+  openModal(`
+    <h3>Custom categories</h3>
+    <div style="max-height:260px; overflow-y:auto; margin-bottom:8px;">${rows || `<div class="empty-state">None yet.</div>`}</div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="ccClose">Close</button>
+      <button class="btn-primary" id="ccAdd">Add category</button>
+    </div>
+  `);
+  document.getElementById("ccClose").addEventListener("click", closeModal);
+  document.getElementById("ccAdd").addEventListener("click", ()=> openCategoryForm(null));
+  modalBody.querySelectorAll("[data-cat-edit]").forEach(el=>{
+    el.addEventListener("click", ()=> openCategoryForm(el.dataset.catEdit));
+  });
+}
+
+function openCategoryForm(id){
+  const c = id ? CUSTOM_CATEGORIES.find(x=> x.id === id) : {name:"", emoji:""};
+  openModal(`
+    <h3>${id ? "Edit category" : "New category"}</h3>
+    <div class="field"><label>Name</label><input id="ccName" value="${escapeHtml(c.name)}" placeholder="e.g. Pets" maxlength="20" /></div>
+    <div class="field"><label>Emoji</label><input id="ccEmoji" value="${escapeHtml(c.emoji)}" placeholder="🐶" /></div>
+    <div class="hint">Tip: use your phone's emoji keyboard. Leave blank for 🏷️.</div>
+    <div class="modal-actions">
+      ${id ? `<button class="btn-danger" id="ccDelete">Delete</button>` : ""}
+      <button class="btn-ghost" id="ccCancel">Cancel</button>
+      <button class="btn-primary" id="ccSave">Save</button>
+    </div>
+  `);
+  document.getElementById("ccCancel").addEventListener("click", closeModal);
+  document.getElementById("ccSave").addEventListener("click", async ()=>{
+    const name = document.getElementById("ccName").value.trim();
+    const emoji = firstEmoji(document.getElementById("ccEmoji").value);
+    if(!name){ toast("Give it a name"); return; }
+    const clash = CATEGORIES.some(x=> x.id !== id && x.name.toLowerCase() === name.toLowerCase());
+    if(clash){ toast("That name already exists"); return; }
+    if(id){ Object.assign(c, {name, emoji}); }
+    else CUSTOM_CATEGORIES.push({id:"c_" + uid(), name, emoji});
+    await saveCustomCategories();
+    closeModal();
+    toast(id ? "Category updated" : "Category added");
+  });
+  const del = document.getElementById("ccDelete");
+  if(del) del.addEventListener("click", async ()=>{
+    // Entries, recurring items and budgets using it move to "Other" so nothing is lost
+    const entries = await idbGetAll("entries");
+    for(const e of entries){ if(e.category === id){ e.category = "other"; await idbPut("entries", e); } }
+    const rules = await idbGetAll("recurring");
+    for(const r of rules){ if(r.category === id){ r.category = "other"; await idbPut("recurring", r); } }
+    await idbDelete("budgets", id);
+    CUSTOM_CATEGORIES = CUSTOM_CATEGORIES.filter(x=> x.id !== id);
+    await saveCustomCategories();
+    closeModal();
+    toast("Category deleted — entries moved to Other");
+  });
+}
 
 let draft = { category:"food", type:"expense", amountStr:"" };
 
@@ -544,6 +677,7 @@ function startNumpad(catId){
   document.getElementById("numCatTag").textContent = catInfo(catId).emoji + " " + catInfo(catId).name;
   setType(draft.type);
   updateNumDisplay();
+  document.getElementById("numAccount").innerHTML = acctOptions(defaultAcctId());
   showScreen("screen-numpad");
 }
 document.getElementById("goManual").addEventListener("click", ()=> showScreen("screen-category"));
@@ -599,8 +733,10 @@ document.getElementById("saveManual").addEventListener("click", async ()=>{
     date: todayISO(),
     note: "",
     createdAt: Date.now(),
+    accountId: document.getElementById("numAccount").value,
   };
   await idbPut("entries", entry);
+  await rememberAccount(entry.accountId);
   toast("Saved");
   showScreen("screen-home");
 });
@@ -999,6 +1135,7 @@ function showConfirm(dataUrl, parsed){
       <div class="confirm-row"><label>Amount</label><input id="cfAmount" class="mono" inputmode="decimal" value="${escapeHtml(parsed.amount||"")}" placeholder="0.00" /></div>
       <div class="confirm-row"><label>Date</label><input id="cfDate" type="date" value="${parsed.date}" /></div>
       <div class="confirm-row"><label>Category</label><select id="cfCategory">${catOptions}</select></div>
+      <div class="confirm-row"><label>Account</label><select id="cfAccount">${acctOptions(defaultAcctId())}</select></div>
     </div>
     <button class="capture-btn" id="confirmSave" style="width:100%;">Save entry</button>
   `;
@@ -1013,8 +1150,10 @@ function showConfirm(dataUrl, parsed){
       date: document.getElementById("cfDate").value || todayISO(),
       note: document.getElementById("cfMerchant").value || "",
       createdAt: Date.now(),
+      accountId: document.getElementById("cfAccount").value,
     };
     await idbPut("entries", entry);
+    await rememberAccount(entry.accountId);
     const month = entry.date.slice(0,7);
     await idbPut("receipts", {
       id: uid(),
@@ -1041,6 +1180,7 @@ document.getElementById("goPhoto").addEventListener("click", ()=>{ resetPhotoSta
 /* ============================================================
    OVERVIEW
 ============================================================ */
+let overviewAcct = "all"; // "all" or an account id
 let overviewMonth = new Date(); // first of current month tracked via .getMonth/.getFullYear
 
 function monthKey(d){ return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); }
@@ -1058,8 +1198,12 @@ document.getElementById("nextMonth").addEventListener("click", ()=>{
 async function renderOverview(){
   document.getElementById("overviewMonthLabel").textContent = monthLabel(overviewMonth);
   const key = monthKey(overviewMonth);
+  await loadAccounts();
+  if(overviewAcct !== "all" && !acctInfo(overviewAcct)) overviewAcct = "all";
   const all = await idbGetAll("entries");
-  const entries = all.filter(e=> e.date.slice(0,7) === key);
+  renderAcctSwitch(all);
+  const scoped = overviewAcct === "all" ? all : all.filter(e=> e.accountId === overviewAcct || e.toAccountId === overviewAcct);
+  const entries = scoped.filter(e=> e.date.slice(0,7) === key);
 
   const totalIn = entries.filter(e=>e.type==="income").reduce((s,e)=>s+e.amount,0);
   const totalOut = entries.filter(e=>e.type==="expense").reduce((s,e)=>s+e.amount,0);
@@ -1086,7 +1230,7 @@ async function renderOverview(){
     catWrap.innerHTML = catIds.map(cid=>{
       const c = catInfo(cid);
       const val = byCat[cid];
-      const budget = budgetMap[cid];
+      const budget = overviewAcct === "all" ? budgetMap[cid] : undefined;
       const pct = Math.min(100, (val / (budget || maxVal)) * 100);
       const over = budget && val > budget;
       const budgetTxt = budget ? `${fmtMoney(val)} of ~${fmtMoney(budget)}` : fmtMoney(val);
@@ -1097,7 +1241,7 @@ async function renderOverview(){
         </div>`;
     }).join("");
     catWrap.querySelectorAll("[data-set-budget]").forEach(row=>{
-      row.addEventListener("click", ()=> openBudgetModal(row.dataset.setBudget, budgetMap[row.dataset.setBudget]));
+      row.addEventListener("click", ()=>{ if(overviewAcct !== "all") return; openBudgetModal(row.dataset.setBudget, budgetMap[row.dataset.setBudget]); });
     });
   }
 
@@ -1113,14 +1257,18 @@ async function renderOverview(){
   timelineWrap.innerHTML = days.map(day=>{
     const dayEntries = byDay[day].sort((a,b)=> b.createdAt-a.createdAt);
     const rows = dayEntries.map(e=>{
-      const c = catInfo(e.category);
+      const c = entryDisplay(e);
+      const sub = entrySub(e);
+      let sign, cls = e.type;
+      if(e.type === "transfer"){ cls = "transfer"; sign = overviewAcct === "all" ? "" : (e.toAccountId === overviewAcct ? "+" : "-"); }
+      else sign = e.type === "income" ? "+" : "-";
       return `
         <div class="entry-row" data-entry="${e.id}">
           <div class="left">
             <div class="emoji">${c.emoji}</div>
-            <div class="meta"><div class="cat">${c.name}</div>${e.note?`<div class="note">${escapeHtml(e.note)}</div>`:""}</div>
+            <div class="meta"><div class="cat">${c.name}</div>${sub?`<div class="note">${escapeHtml(sub)}</div>`:""}</div>
           </div>
-          <div class="amt ${e.type}">${e.type==="income"?"+":"-"}${fmtMoney(e.amount)}</div>
+          <div class="amt ${cls}">${sign}${fmtMoney(e.amount)}</div>
         </div>`;
     }).join("");
     return `<div class="timeline-day"><div class="date">${fmtDateLong(day)}</div>${rows}</div>`;
@@ -1153,6 +1301,8 @@ function openBudgetModal(catId, current){
 async function openEditEntry(id){
   const e = await idbGet("entries", id);
   if(!e) return;
+  if(e.type === "transfer"){ openEditTransfer(e); return; }
+  await loadAccounts();
   const catOptions = CATEGORIES.map(c=>
     `<option value="${c.id}" ${c.id===e.category?"selected":""}>${c.emoji} ${c.name}</option>`
   ).join("");
@@ -1160,6 +1310,7 @@ async function openEditEntry(id){
     <h3>Edit entry</h3>
     <div class="field"><label>Amount</label><input id="editAmount" class="mono" inputmode="decimal" value="${e.amount}" /></div>
     <div class="field"><label>Category</label><select id="editCategory">${catOptions}</select></div>
+    <div class="field"><label>Account</label><select id="editAccount">${acctOptions(e.accountId)}</select></div>
     <div class="field"><label>Date</label><input id="editDate" type="date" value="${e.date}" /></div>
     <div class="field"><label>Note</label><input id="editNote" value="${escapeHtml(e.note||"")}" placeholder="Optional" /></div>
     <div class="modal-actions">
@@ -1178,6 +1329,7 @@ async function openEditEntry(id){
     if(!amount || amount<=0){ toast("Enter a valid amount"); return; }
     e.amount = amount;
     e.category = document.getElementById("editCategory").value;
+    e.accountId = document.getElementById("editAccount").value;
     e.date = document.getElementById("editDate").value;
     e.note = document.getElementById("editNote").value;
     await idbPut("entries", e);
@@ -1257,6 +1409,7 @@ async function checkRecurring(){
         note: rule.name,
         createdAt: Date.now(),
         recurringId: rule.id,
+        accountId: (rule.accountId && acctInfo(rule.accountId)) ? rule.accountId : ACCOUNTS[0].id,
       });
     }
   }
@@ -1279,6 +1432,7 @@ async function openRecurringManager(){
     <div class="field"><label>Name</label><input id="recName" placeholder="Rent" /></div>
     <div class="field"><label>Amount</label><input id="recAmount" class="mono" inputmode="decimal" placeholder="0.00" /></div>
     <div class="field"><label>Category</label><select id="recCategory">${catOptions}</select></div>
+    <div class="field"><label>Account</label><select id="recAccount">${acctOptions(defaultAcctId())}</select></div>
     <div class="field"><label>Day of month</label><input id="recDay" type="number" min="1" max="28" placeholder="1" /></div>
     <div class="modal-actions">
       <button class="btn-ghost" id="recCancel">Close</button>
@@ -1292,7 +1446,7 @@ async function openRecurringManager(){
     const day = parseInt(document.getElementById("recDay").value);
     const category = document.getElementById("recCategory").value;
     if(!name || !amount || amount<=0 || !day || day<1 || day>28){ toast("Fill in all fields"); return; }
-    await idbPut("recurring", {id:uid(), name, amount, day, category});
+    await idbPut("recurring", {id:uid(), name, amount, day, category, accountId: document.getElementById("recAccount").value});
     await checkRecurring();
     closeModal();
     renderLastEntry();
@@ -1341,6 +1495,270 @@ document.getElementById("openSettings").addEventListener("click", openSettings);
 /* ============================================================
    HELPERS
 ============================================================ */
+/* ============================================================
+   ACCOUNTS
+   Each account: {id, name, type:"bank"|"credit", opening, limit}
+   bank   -> balance = opening + income - expenses (+/- transfers)
+   credit -> owed    = opening - income(payments) + expenses; available = limit - owed
+   Transfers (e.g. paying off a card from your bank) move money between
+   accounts without counting as income or spending.
+============================================================ */
+let ACCOUNTS = [];
+let lastAcctId = null;
+
+async function loadAccounts(){
+  ACCOUNTS = (await idbGetAll("accounts")).sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+}
+function acctInfo(id){ return ACCOUNTS.find(a=> a.id === id); }
+function acctName(id){ const a = acctInfo(id); return a ? a.name : "Unknown"; }
+function acctOptions(selectedId){
+  return ACCOUNTS.map(a=> `<option value="${a.id}" ${a.id===selectedId?"selected":""}>${a.type==="credit"?"💳":"🏦"} ${escapeHtml(a.name)}</option>`).join("");
+}
+function defaultAcctId(){
+  return (lastAcctId && acctInfo(lastAcctId)) ? lastAcctId : ACCOUNTS[0].id;
+}
+async function rememberAccount(id){
+  lastAcctId = id;
+  await setSetting("lastAccountId", id);
+}
+async function ensureAccounts(){
+  let list = await idbGetAll("accounts");
+  if(!list.length){
+    const main = {id:uid(), name:"Debit card", type:"bank", opening:0, limit:0, createdAt:Date.now()};
+    await idbPut("accounts", main);
+    list = [main];
+  }
+  list.sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+  // Rename the auto-created default account (only if it still has the default name)
+  for(const a of list){ if(a.name === "Main account"){ a.name = "Debit card"; await idbPut("accounts", a); } }
+  const def = list[0].id;
+  // One-time migration: entries logged before accounts existed go to the first account
+  const entries = await idbGetAll("entries");
+  for(const e of entries){
+    if(e.type !== "transfer" && !e.accountId){ e.accountId = def; await idbPut("entries", e); }
+  }
+  lastAcctId = await getSetting("lastAccountId");
+  await loadAccounts();
+}
+
+function acctNet(a, entries){
+  let n = 0;
+  for(const e of entries){
+    if(e.type === "transfer"){
+      if(e.accountId === a.id) n -= e.amount;
+      if(e.toAccountId === a.id) n += e.amount;
+    } else if(e.accountId === a.id){
+      n += (e.type === "income" ? e.amount : -e.amount);
+    }
+  }
+  return n;
+}
+// value = signed contribution to combined total; main/sub = display text
+function acctFigures(a, entries){
+  const net = acctNet(a, entries);
+  if(a.type === "credit"){
+    const owed = (a.opening||0) - net;
+    const avail = (a.limit||0) - owed;
+    return { value: -owed, main: fmtSigned(avail), sub: `available of ${fmtMoney(a.limit||0)} limit`, neg: avail < 0 };
+  }
+  const bal = (a.opening||0) + net;
+  return { value: bal, main: fmtSigned(bal), sub: "balance", neg: bal < 0 };
+}
+function fmtSigned(n){ return (n<0?"-":"") + fmtMoney(Math.abs(n)); }
+
+function entryDisplay(e){
+  return e.type === "transfer" ? {emoji:"🔁", name:"Transfer"} : catInfo(e.category);
+}
+function entrySub(e){
+  if(e.type === "transfer") return acctName(e.accountId) + " → " + acctName(e.toAccountId);
+  const parts = [];
+  if(overviewAcct === "all" && e.accountId) parts.push(acctName(e.accountId));
+  if(e.note) parts.push(e.note);
+  return parts.join(" · ");
+}
+
+function renderAcctSwitch(entries){
+  const nameEl = document.getElementById("acctSwitchName");
+  const balEl = document.getElementById("acctSwitchBal");
+  const subEl = document.getElementById("acctSwitchSub");
+  if(overviewAcct === "all"){
+    const combined = ACCOUNTS.reduce((sum,a)=> sum + acctFigures(a, entries).value, 0);
+    nameEl.textContent = "All accounts";
+    balEl.textContent = fmtSigned(combined);
+    balEl.className = "bal mono" + (combined < 0 ? " neg" : "");
+    subEl.textContent = "combined overview";
+  } else {
+    const a = acctInfo(overviewAcct);
+    const f = acctFigures(a, entries);
+    nameEl.textContent = (a.type === "credit" ? "💳 " : "🏦 ") + a.name;
+    balEl.textContent = f.main;
+    balEl.className = "bal mono" + (f.neg ? " neg" : "");
+    subEl.textContent = f.sub;
+  }
+}
+function stepAccount(dir){
+  const order = ACCOUNTS.map(a=> a.id).concat("all"); // combined overview is always last
+  let i = order.indexOf(overviewAcct);
+  if(i < 0) i = order.length - 1;
+  overviewAcct = order[(i + dir + order.length) % order.length];
+  renderOverview();
+}
+document.getElementById("prevAcct").addEventListener("click", ()=> stepAccount(-1));
+document.getElementById("nextAcct").addEventListener("click", ()=> stepAccount(1));
+
+async function openAccountsManager(){
+  await loadAccounts();
+  const entries = await idbGetAll("entries");
+  const rows = ACCOUNTS.map(a=>{
+    const f = acctFigures(a, entries);
+    return `<div class="entry-row" data-acct-edit="${a.id}">
+      <div class="left"><div class="emoji">${a.type==="credit"?"💳":"🏦"}</div>
+      <div class="meta"><div class="cat">${escapeHtml(a.name)}</div><div class="note">${f.sub}</div></div></div>
+      <div class="amt ${f.neg?"expense":""}">${f.main}</div></div>`;
+  }).join("");
+  openModal(`
+    <h3>Accounts</h3>
+    <div style="max-height:260px; overflow-y:auto; margin-bottom:8px;">${rows}</div>
+    <div class="hint" style="margin-top:6px;">Tap an account to edit it.</div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="acctClose">Close</button>
+      <button class="btn-ghost" id="acctTransfer">Transfer</button>
+      <button class="btn-primary" id="acctAdd">Add account</button>
+    </div>
+  `);
+  document.getElementById("acctClose").addEventListener("click", closeModal);
+  document.getElementById("acctAdd").addEventListener("click", ()=> openAccountForm(null));
+  document.getElementById("acctTransfer").addEventListener("click", ()=> openTransferForm());
+  modalBody.querySelectorAll("[data-acct-edit]").forEach(el=>{
+    el.addEventListener("click", ()=> openAccountForm(el.dataset.acctEdit));
+  });
+}
+
+function openAccountForm(id){
+  const a = id ? acctInfo(id) : {name:"", type:"bank", opening:"", limit:""};
+  openModal(`
+    <h3>${id ? "Edit account" : "New account"}</h3>
+    <div class="field"><label>Name</label><input id="afName" value="${escapeHtml(a.name)}" placeholder="e.g. ABN AMRO" /></div>
+    <div class="field"><label>Type</label>
+      <select id="afType">
+        <option value="bank" ${a.type==="bank"?"selected":""}>🏦 Debit card</option>
+        <option value="credit" ${a.type==="credit"?"selected":""}>💳 Credit card</option>
+      </select></div>
+    <div class="field" id="afLimitWrap"><label>Credit limit ($)</label><input id="afLimit" class="mono" inputmode="decimal" value="${a.limit||""}" placeholder="0.00" /></div>
+    <div class="field"><label id="afOpeningLabel">Starting balance ($)</label><input id="afOpening" class="mono" value="${a.opening||""}" placeholder="0.00" /></div>
+    <div class="hint" id="afHint"></div>
+    <div class="modal-actions">
+      ${id ? `<button class="btn-danger" id="afDelete">Delete</button>` : ""}
+      <button class="btn-ghost" id="afCancel">Back</button>
+      <button class="btn-primary" id="afSave">Save</button>
+    </div>
+  `);
+  const typeSel = document.getElementById("afType");
+  function sync(){
+    const credit = typeSel.value === "credit";
+    document.getElementById("afLimitWrap").style.display = credit ? "" : "none";
+    document.getElementById("afOpeningLabel").textContent = credit ? "Currently owed ($)" : "Starting balance ($)";
+    document.getElementById("afHint").textContent = credit
+      ? "What you owe on the card today (0 if nothing). Spending adds to it, payments reduce it."
+      : "What's in the account before the entries you log here. Income adds to it, expenses take from it.";
+  }
+  typeSel.addEventListener("change", sync);
+  sync();
+  document.getElementById("afCancel").addEventListener("click", openAccountsManager);
+  document.getElementById("afSave").addEventListener("click", async ()=>{
+    const name = document.getElementById("afName").value.trim();
+    const type = typeSel.value;
+    const opening = parseFloat(document.getElementById("afOpening").value.replace(",", ".")) || 0;
+    const limit = parseFloat(document.getElementById("afLimit").value.replace(",", ".")) || 0;
+    if(!name){ toast("Give the account a name"); return; }
+    if(type === "credit" && limit <= 0){ toast("Enter a credit limit"); return; }
+    await idbPut("accounts", {
+      id: id || uid(), name, type, opening,
+      limit: type === "credit" ? limit : 0,
+      createdAt: id ? a.createdAt : Date.now(),
+    });
+    await loadAccounts();
+    toast(id ? "Account updated" : "Account added");
+    renderOverview(); renderLastEntry();
+    openAccountsManager();
+  });
+  const del = document.getElementById("afDelete");
+  if(del) del.addEventListener("click", async ()=>{
+    const entries = await idbGetAll("entries");
+    const used = entries.filter(e=> e.accountId === id || e.toAccountId === id).length;
+    if(ACCOUNTS.length <= 1){ toast("You need at least one account"); return; }
+    if(used){ toast(`Has ${used} entries — can't delete`); return; }
+    await idbDelete("accounts", id);
+    if(lastAcctId === id) lastAcctId = null;
+    await loadAccounts();
+    toast("Account deleted");
+    renderOverview();
+    openAccountsManager();
+  });
+}
+
+function openTransferForm(){
+  if(ACCOUNTS.length < 2){ toast("Add a second account first"); return; }
+  const from = defaultAcctId();
+  const to = (ACCOUNTS.find(a=> a.id !== from) || ACCOUNTS[0]).id;
+  openModal(`
+    <h3>Transfer</h3>
+    <div class="field"><label>From</label><select id="tfFrom">${acctOptions(from)}</select></div>
+    <div class="field"><label>To</label><select id="tfTo">${acctOptions(to)}</select></div>
+    <div class="field"><label>Amount</label><input id="tfAmount" class="mono" inputmode="decimal" placeholder="0.00" /></div>
+    <div class="field"><label>Date</label><input id="tfDate" type="date" value="${todayISO()}" /></div>
+    <div class="hint">Use this to pay off a credit card or move money between accounts. It doesn't count as spending or income.</div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="tfCancel">Back</button>
+      <button class="btn-primary" id="tfSave">Transfer</button>
+    </div>
+  `);
+  document.getElementById("tfCancel").addEventListener("click", openAccountsManager);
+  document.getElementById("tfSave").addEventListener("click", async ()=>{
+    const f = document.getElementById("tfFrom").value, t = document.getElementById("tfTo").value;
+    const amount = parseFloat(document.getElementById("tfAmount").value.replace(",", "."));
+    if(f === t){ toast("Pick two different accounts"); return; }
+    if(!amount || amount <= 0){ toast("Enter a valid amount"); return; }
+    await idbPut("entries", {
+      id: uid(), type: "transfer", amount, category: "transfer",
+      accountId: f, toAccountId: t,
+      date: document.getElementById("tfDate").value || todayISO(),
+      note: "", createdAt: Date.now(),
+    });
+    closeModal(); toast("Transferred");
+    renderOverview(); renderLastEntry();
+  });
+}
+
+function openEditTransfer(e){
+  openModal(`
+    <h3>Edit transfer</h3>
+    <div class="field"><label>From</label><select id="etFrom">${acctOptions(e.accountId)}</select></div>
+    <div class="field"><label>To</label><select id="etTo">${acctOptions(e.toAccountId)}</select></div>
+    <div class="field"><label>Amount</label><input id="etAmount" class="mono" inputmode="decimal" value="${e.amount}" /></div>
+    <div class="field"><label>Date</label><input id="etDate" type="date" value="${e.date}" /></div>
+    <div class="modal-actions">
+      <button class="btn-danger" id="etDelete">Delete</button>
+      <button class="btn-primary" id="etSave">Save</button>
+    </div>
+  `);
+  document.getElementById("etDelete").addEventListener("click", async ()=>{
+    await idbDelete("entries", e.id); closeModal(); renderOverview(); renderLastEntry(); toast("Deleted");
+  });
+  document.getElementById("etSave").addEventListener("click", async ()=>{
+    const f = document.getElementById("etFrom").value, t = document.getElementById("etTo").value;
+    const amount = parseFloat(document.getElementById("etAmount").value.replace(",", "."));
+    if(f === t){ toast("Pick two different accounts"); return; }
+    if(!amount || amount <= 0){ toast("Enter a valid amount"); return; }
+    e.accountId = f; e.toAccountId = t; e.amount = amount;
+    e.date = document.getElementById("etDate").value || e.date;
+    await idbPut("entries", e); closeModal(); renderOverview(); renderLastEntry(); toast("Updated");
+  });
+}
+
+document.getElementById("manageAccounts").addEventListener("click", openAccountsManager);
+document.getElementById("openAccountsMenu").addEventListener("click", ()=>{ closeSheet(); openAccountsManager(); });
+
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtMoney(n){ return "$" + Number(n).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtDateLong(iso){
@@ -1355,6 +1773,9 @@ function escapeHtml(s){
 ============================================================ */
 async function boot(){
   await openDB();
+  await loadCategories();
+  renderCatGrid();
+  await ensureAccounts();
   await checkRecurring();
   await renderLastEntry();
   if("serviceWorker" in navigator){
